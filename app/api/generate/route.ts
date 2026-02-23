@@ -30,6 +30,30 @@ function mapLinkFor(place: Place): string {
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
+function mapLinkFromQuery(query: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+function matchesUserIntent(place: Place, area: string, interests: string[]) {
+  const areaNeedle = area.trim().toLowerCase();
+  const areaMatched = !areaNeedle || place.area.toLowerCase().includes(areaNeedle);
+
+  if (interests.length === 0) return areaMatched;
+
+  const tokens = [
+    ...place.category.map((v) => v.toLowerCase()),
+    ...place.vibe.map((v) => v.toLowerCase()),
+    place.shortDesc.toLowerCase()
+  ];
+
+  const interestMatched = interests.some((interest) => {
+    const needle = interest.toLowerCase();
+    return tokens.some((token) => token.includes(needle));
+  });
+
+  return areaMatched && interestMatched;
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as GeneratePayload;
 
@@ -42,15 +66,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Candidates are required." }, { status: 400 });
   }
 
+  const interests = body.interests ?? [];
+  const area = body.area ?? "";
+  const matchedCandidates = candidates.filter((candidate) => matchesUserIntent(candidate, area, interests));
+
+  const shouldUseGeneralGuide = matchedCandidates.length === 0;
+
   const schema = {
     summary: "string",
     places: [
       {
-        id: "string(from candidate id)",
-        name: "string(from candidate name)",
+        id: "string",
+        name: "string",
         reason: "string",
         best_time: "string",
-        tips: "string"
+        tips: "string",
+        map_query: "string"
       }
     ],
     half_day_course: {
@@ -59,24 +90,43 @@ export async function POST(req: NextRequest) {
     }
   };
 
-  const prompt = {
-    instruction:
-      "You are a strict planner. Use ONLY provided candidates. Never invent place names. Return STRICT JSON ONLY.",
-    rules: [
-      "Only recommend 5-8 places from candidates.",
-      "Output must be valid JSON object. No markdown, no explanations.",
-      "If language=en output in natural English, if language=ko output in Korean.",
-      "Place name/id must exactly match candidate data."
-    ],
-    input: {
-      area: body.area ?? "",
-      interests: body.interests ?? [],
-      constraints: body.constraints ?? "",
-      language: body.language ?? "en",
-      candidates
-    },
-    output_schema: schema
-  };
+  const prompt = shouldUseGeneralGuide
+    ? {
+        instruction:
+          "You are a Korea travel guide. Host candidate data does not match this request, so provide safe and practical general travel suggestions for Korea.",
+        rules: [
+          "Recommend 5-8 practical places or activities relevant to the requested area/interests.",
+          "Output must be valid JSON object. No markdown, no explanations.",
+          "If language=en output in natural English, if language=ko output in Korean.",
+          "map_query must be specific enough for Google Maps search."
+        ],
+        input: {
+          area,
+          interests,
+          constraints: body.constraints ?? "",
+          language: body.language ?? "en"
+        },
+        output_schema: schema
+      }
+    : {
+        instruction:
+          "You are a strict planner. Use ONLY provided candidates. Never invent place names. Return STRICT JSON ONLY.",
+        rules: [
+          "Only recommend 5-8 places from candidates.",
+          "Output must be valid JSON object. No markdown, no explanations.",
+          "If language=en output in natural English, if language=ko output in Korean.",
+          "Place name/id must exactly match candidate data.",
+          "map_query can be empty."
+        ],
+        input: {
+          area,
+          interests,
+          constraints: body.constraints ?? "",
+          language: body.language ?? "en",
+          candidates
+        },
+        output_schema: schema
+      };
 
   const geminiRes = await fetch(ENDPOINT, {
     method: "POST",
@@ -98,7 +148,7 @@ export async function POST(req: NextRequest) {
   const rawText = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   const jsonText = extractJsonText(rawText);
 
-  let parsed: RecommendationResult;
+  let parsed: RecommendationResult & { places: Array<{ map_query?: string } & RecommendationResult["places"][number]> };
   try {
     parsed = JSON.parse(jsonText);
   } catch {
@@ -106,6 +156,30 @@ export async function POST(req: NextRequest) {
       { error: `Failed to parse model JSON. Raw response:\n${rawText}` },
       { status: 500 }
     );
+  }
+
+  if (shouldUseGeneralGuide) {
+    const fallbackPlaces = (parsed.places || []).slice(0, 8).map((place, idx) => ({
+      ...place,
+      id: place.id || `general-${idx + 1}`,
+      map_link: mapLinkFromQuery(place.map_query || `${place.name} Korea`)
+    }));
+
+    if (fallbackPlaces.length === 0) {
+      return NextResponse.json(
+        { error: `Model did not return valid general travel places. Raw response:\n${rawText}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      result: {
+        source: "general",
+        summary: parsed.summary,
+        places: fallbackPlaces,
+        half_day_course: parsed.half_day_course
+      }
+    });
   }
 
   const byId = new Map(candidates.map((c) => [c.id, c]));
@@ -130,6 +204,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     result: {
+      source: "candidate",
       summary: parsed.summary,
       places: normalizedPlaces,
       half_day_course: parsed.half_day_course

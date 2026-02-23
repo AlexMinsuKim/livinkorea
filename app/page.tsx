@@ -85,15 +85,33 @@ export default function HomePage() {
 
   return (
     <main className="container grid">
-      <div className="header">
-        <div>
-          <h1>LivinKorea Local Trip Planner</h1>
-          <p className="small">Local-first travel picks for foreign visitors in Korea.</p>
+      <div className="hero card grid">
+        <div className="header">
+          <div>
+            <p className="hero-kicker">리빙코리아 여행 플래너</p>
+            <h1>한국의 정서를 담은 로컬 여행 코스</h1>
+            <p className="small">Host가 저장한 장소를 우선 사용하고, 없으면 일반 여행 정보를 자연스럽게 안내합니다.</p>
+          </div>
+          <nav className="top-nav">
+            <Link href="/">Traveler</Link>
+            <Link href="/host">Host Admin</Link>
+          </nav>
         </div>
-        <nav className="top-nav">
-          <Link href="/">Traveler</Link>
-          <Link href="/host">Host Admin</Link>
-        </nav>
+
+        <section className="info-strip">
+          <div>
+            <strong>{places.length}</strong>
+            <span>등록된 장소</span>
+          </div>
+          <div>
+            <strong>{areaCandidates.length}</strong>
+            <span>지역 일치 후보</span>
+          </div>
+          <div>
+            <strong>{interests.length}</strong>
+            <span>선택한 관심사</span>
+          </div>
+        </section>
       </div>
 
       <section className="card grid">
@@ -101,11 +119,11 @@ export default function HomePage() {
         <div className="input-grid">
           <label>
             Area
-            <input value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g. Seoul" />
+            <input value={area} onChange={(e) => setArea(e.target.value)} placeholder="e.g. Seoul, Busan" />
           </label>
           <label>
             Language
-            <select value={language} onChange={(e) => setLanguage(e.target.value as "en" | "ko") }>
+            <select value={language} onChange={(e) => setLanguage(e.target.value as "en" | "ko")}>
               <option value="en">English</option>
               <option value="ko">한국어</option>
             </select>
@@ -152,8 +170,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="small">Candidates loaded: {places.length} (Area match: {areaCandidates.length})</div>
-
         <button className="btn-primary" onClick={generateRecommendation} disabled={loading}>
           {loading ? "Generating..." : "Get local recommendations"}
         </button>
@@ -165,6 +181,9 @@ export default function HomePage() {
         <section className="grid">
           <div className="card grid">
             <h2 className="section-title">Recommended places</h2>
+            {result.source === "general" && (
+              <p className="notice">호스트 DB에 맞는 장소가 부족하여 일반 여행 가이드를 제공합니다.</p>
+            )}
             <p className="small">{result.summary}</p>
             <div className="grid">
               {result.places.map((p) => (
@@ -187,7 +206,9 @@ export default function HomePage() {
             <div className="grid">
               {result.half_day_course.steps.map((step, idx) => (
                 <div key={`${step.name}-${idx}`} className="course-step">
-                  <strong>{idx + 1}. {step.name}</strong>
+                  <strong>
+                    {idx + 1}. {step.name}
+                  </strong>
                   <p>{step.why}</p>
                   <p className="small">ETA: {step.eta}</p>
                 </div>
