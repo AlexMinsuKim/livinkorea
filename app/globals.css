@@ -69,9 +69,37 @@ body {
 
 .header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.hero-actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.language-switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.lang-btn {
+  border: none;
+  background: transparent;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #645a53;
+}
+
+.lang-btn.active {
+  background: var(--text);
+  color: #fff;
 }
 
 h1,
@@ -100,6 +128,21 @@ p {
 .grid {
   display: grid;
   gap: 14px;
+}
+
+.planner-card {
+  gap: 18px;
+  padding: 22px;
+}
+
+.planner-head {
+  display: grid;
+  gap: 4px;
+}
+
+.trip-prompt {
+  font-size: 26px;
+  line-height: 1.4;
 }
 
 .input-grid {
@@ -154,6 +197,13 @@ button {
 .btn-secondary {
   background: #efe8df;
   color: #473a2e;
+}
+
+.action-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .tag-list {
@@ -227,6 +277,27 @@ button {
 @media (max-width: 700px) {
   .info-strip {
     grid-template-columns: 1fr;
+  }
+
+  .header {
+    flex-direction: column;
+  }
+
+  .hero-actions {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .trip-prompt {
+    font-size: 22px;
+  }
+
+  .action-row {
+    flex-direction: column;
+  }
+
+  .action-row button {
+    width: 100%;
   }
 
   h1 {
