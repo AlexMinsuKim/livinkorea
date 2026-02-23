@@ -15,6 +15,7 @@ export type RecommendationPlace = {
   reason: string;
   best_time: string;
   tips: string;
+  map_query?: string;
   map_link: string;
 };
 
