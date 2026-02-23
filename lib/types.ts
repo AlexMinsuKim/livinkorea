@@ -25,6 +25,7 @@ export type CourseStep = {
 };
 
 export type RecommendationResult = {
+  source?: "candidate" | "general";
   summary: string;
   places: RecommendationPlace[];
   half_day_course: {
