@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { loadApiKey, loadPlaces, saveApiKey } from "@/lib/storage";
-import { Place, RecommendationResult } from "@/lib/types";
+import { loadApiKey, loadPlaceComments, loadPlaces, saveApiKey, savePlaceComments } from "@/lib/storage";
+import { Place, PlaceComment, RecommendationResult } from "@/lib/types";
 
 const INTEREST_OPTIONS: Record<"en" | "ko", string[]> = {
   en: [
@@ -86,7 +86,15 @@ const COPY = {
     bestTime: "Best time",
     tips: "Tips",
     openMaps: "Open in Google Maps",
+    mapGuide: "After checking each recommendation, open Google Maps to navigate right away.",
     halfDay: "Half-day course",
+    comments: "Traveler comments",
+    leaveComment: "Leave your review",
+    nickname: "Nickname",
+    rating: "Rating",
+    commentPlaceholder: "Share your real experience and tips for this place.",
+    submitComment: "Post comment",
+    noComments: "No comments yet. Be the first traveler to share feedback!",
     areaPlaceholder: "e.g. Seoul, Busan, Jeonju",
     planCardTitle: "Plan your local day",
     languageEnglish: "English",
@@ -118,7 +126,15 @@ const COPY = {
     bestTime: "추천 시간",
     tips: "팁",
     openMaps: "Google 지도에서 보기",
+    mapGuide: "추천 장소를 확인한 뒤 Google 지도로 바로 이동해 동선을 이어가세요.",
     halfDay: "반나절 코스",
+    comments: "다녀온 사람들 코멘트",
+    leaveComment: "코멘트 남기기",
+    nickname: "닉네임",
+    rating: "평점",
+    commentPlaceholder: "직접 다녀온 후기와 팁을 남겨주세요.",
+    submitComment: "댓글 등록",
+    noComments: "아직 댓글이 없어요. 첫 후기를 남겨보세요!",
     areaPlaceholder: "예: 서울, 부산, 전주",
     planCardTitle: "로컬 여행 플랜 만들기",
     languageEnglish: "English",
@@ -136,14 +152,48 @@ export default function HomePage() {
   const [places, setPlaces] = useState<Place[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<RecommendationResult | null>(null);
+  const [comments, setComments] = useState<PlaceComment[]>([]);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, { author: string; rating: 1 | 2 | 3 | 4 | 5; content: string }>>({});
   const [error, setError] = useState<string>("");
   const [promptSeed, setPromptSeed] = useState(0);
 
   useEffect(() => {
     setApiKey(loadApiKey());
     setPlaces(loadPlaces());
+    setComments(loadPlaceComments());
     setPromptSeed(Math.floor(Math.random() * 1000));
   }, []);
+
+  function upsertDraft(placeId: string, patch: Partial<{ author: string; rating: 1 | 2 | 3 | 4 | 5; content: string }>) {
+    setCommentDrafts((prev) => ({
+      ...prev,
+      [placeId]: {
+        author: prev[placeId]?.author ?? "",
+        rating: prev[placeId]?.rating ?? 5,
+        content: prev[placeId]?.content ?? "",
+        ...patch
+      }
+    }));
+  }
+
+  function submitComment(placeId: string) {
+    const draft = commentDrafts[placeId];
+    if (!draft || !draft.content.trim()) return;
+
+    const nextComment: PlaceComment = {
+      id: `comment-${Date.now()}`,
+      placeId,
+      author: draft.author.trim() || (language === "ko" ? "익명 여행자" : "Anonymous traveler"),
+      rating: draft.rating,
+      content: draft.content.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    const next = [nextComment, ...comments];
+    setComments(next);
+    savePlaceComments(next);
+    upsertDraft(placeId, { content: "", rating: 5 });
+  }
 
   const areaCandidates = useMemo(
     () => places.filter((p) => p.area.toLowerCase().includes(area.toLowerCase())),
@@ -338,9 +388,60 @@ export default function HomePage() {
                   <p>{p.reason}</p>
                   <p className="small">{t.bestTime}: {p.best_time}</p>
                   <p className="small">{t.tips}: {p.tips}</p>
+                  <p className="small">{t.mapGuide}</p>
                   <a href={p.map_link} target="_blank" rel="noreferrer">
                     {t.openMaps}
                   </a>
+
+                  <div className="comment-box grid">
+                    <h4>{t.comments}</h4>
+                    {(comments.filter((comment) => comment.placeId === p.id)).length === 0 && (
+                      <p className="small">{t.noComments}</p>
+                    )}
+                    {comments
+                      .filter((comment) => comment.placeId === p.id)
+                      .slice(0, 5)
+                      .map((comment) => (
+                        <div key={comment.id} className="comment-item">
+                          <p>
+                            <strong>{comment.author}</strong> · {"★".repeat(comment.rating)}
+                          </p>
+                          <p className="small">{comment.content}</p>
+                        </div>
+                      ))}
+
+                    <div className="comment-form grid">
+                      <h4>{t.leaveComment}</h4>
+                      <div className="input-grid">
+                        <label>
+                          {t.nickname}
+                          <input
+                            value={commentDrafts[p.id]?.author ?? ""}
+                            onChange={(e) => upsertDraft(p.id, { author: e.target.value })}
+                          />
+                        </label>
+                        <label>
+                          {t.rating}
+                          <select
+                            value={commentDrafts[p.id]?.rating ?? 5}
+                            onChange={(e) => upsertDraft(p.id, { rating: Number(e.target.value) as 1 | 2 | 3 | 4 | 5 })}
+                          >
+                            {[5, 4, 3, 2, 1].map((n) => (
+                              <option key={n} value={n}>{n}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                      <textarea
+                        placeholder={t.commentPlaceholder}
+                        value={commentDrafts[p.id]?.content ?? ""}
+                        onChange={(e) => upsertDraft(p.id, { content: e.target.value })}
+                      />
+                      <button type="button" className="btn-secondary" onClick={() => submitComment(p.id)}>
+                        {t.submitComment}
+                      </button>
+                    </div>
+                  </div>
                 </article>
               ))}
             </div>
